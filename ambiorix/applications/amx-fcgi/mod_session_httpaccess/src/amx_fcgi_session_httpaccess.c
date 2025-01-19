@@ -67,6 +67,9 @@
 #define MOD_SESSION "fcgi-session"
 
 #define USERINTERFACE_OBJECT_PATH "UserInterface."
+#define USERINTERFACE_FIRST_LOGIN_DM_PATH "UserInterface.X_GTK_FirstLogin"
+#define FIRST_LOGIN_DM_PATH "X_GTK_FirstLogin"
+
 #define CHECK_CREDENTIALS_FOR_ACCESS_RPC "CheckCredentialsForAccess"
 #define CREATE_WEB_SESSION_RPC "CreateWebSession"
 #define CHECK_VALID_SESSION_RPC "CheckSessionValid"
@@ -104,6 +107,30 @@ exit:
     amxc_var_set(int32_t, ret, status);
     amxc_var_clean(&result);
     return 0;
+}
+
+static int httpaccess_check_if_first_login(void) {
+    int status = -1;
+    char* key_path;
+    amxc_var_t result;
+    amxc_var_t* temp;
+
+    amxc_var_init(&result);
+    amxb_bus_ctx_t* ctx = amxb_be_who_has(USERINTERFACE_OBJECT_PATH);
+
+    when_null(ctx, exit);
+
+    when_failed(amxb_get(ctx, USERINTERFACE_FIRST_LOGIN_DM_PATH, 1, &result, 1), exit);
+    temp = amxc_var_get_first(&result);
+    when_null(temp, exit);
+
+    sprintf(key_path, "\"%s\".%s", USERINTERFACE_OBJECT_PATH, FIRST_LOGIN_DM_PATH);
+    temp = amxc_var_get_path(temp, key_path, AMXC_VAR_FLAG_DEFAULT);
+    status = (int)amxc_var_dyncast(bool, temp);
+
+exit:
+    amxc_var_clean(&result);
+    return status;
 }
 
 static int httpaccess_create_session(UNUSED const char* const function_name,
@@ -255,6 +282,7 @@ static AMXM_CONSTRUCTOR session_httpaccess_start(void) {
 
     amxm_module_register(&mod, so, MOD_SESSION);
     amxm_module_add_function(mod, "check_credentials", httpaccess_check_credentials);
+    amxm_module_add_function(mod, "check_if_first_login", httpaccess_check_if_first_login);
     amxm_module_add_function(mod, "create_session", httpaccess_create_session);
     amxm_module_add_function(mod, "delete_session", httpaccess_delete_session);
     amxm_module_add_function(mod, "is_valid_session", httpaccess_is_valid_session);

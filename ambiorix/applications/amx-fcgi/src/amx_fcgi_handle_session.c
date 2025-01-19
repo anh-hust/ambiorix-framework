@@ -72,8 +72,12 @@ static int amx_fcgi_check_credentials(const char* username, const char* password
     when_null(amxc_var_add_key(cstring_t, &args, "httpaccess", httpaccess), exit);
     when_failed(amxm_execute_function(session_ctrl, "fcgi-session", "check_credentials", &args, &result), exit);
 
+    ret = amxm_execute_function(session_ctrl, "fcgi-session", "check_if_first_login");
+    if (ret == -1) goto exit;
+    when_null(amxc_var_add_key(bool, data, "firstlogin", (bool)ret), exit);
+
     ret = GET_INT32(&result, NULL);
-    if(ret == 0) {
+    if (ret == 0) {
         amxc_var_add_key(uint32_t, data, "login_attempts", GET_UINT32(&args, "LoginAttempts"));
     }
 
@@ -100,14 +104,21 @@ exit:
 static int amx_fcgi_create_session_response(amxc_var_t* data, amxc_var_t* result) {
     int status = 500;
     amxc_var_t* login_attempts = amxc_var_take_key(data, "login_attempts");
+    bool firstlogin = amxc_var_dyncast(bool, amxc_var_take_key(data, "firstlogin"));
 
     when_str_empty(GET_CHAR(result, "session_id"), exit);
     amxc_var_set_type(data, AMXC_VAR_ID_HTABLE);
     amxc_var_add_key(cstring_t, data, "sessionID", GET_CHAR(result, "session_id"));
     amxc_var_add_key(uint32_t, data, "absoluteTimeout", SESSION_ABSOLUTE_TIMER);
     amxc_var_add_key(uint32_t, data, "idleTimeout", SESSION_IDLE_TIMER);
-    if(amxc_var_type_of(login_attempts) == AMXC_VAR_ID_UINT32) {
+    amxc_var_add_key(bool, data, "firstlogin", firstlogin);
+    if (amxc_var_type_of(login_attempts) == AMXC_VAR_ID_UINT32) {
         amxc_var_add_key(uint32_t, data, "loginAttempts", amxc_var_constcast(uint32_t, login_attempts));
+    }
+
+    if (firstlogin == true) {
+        status = 307;
+        goto exit;
     }
 
     status = 200;
