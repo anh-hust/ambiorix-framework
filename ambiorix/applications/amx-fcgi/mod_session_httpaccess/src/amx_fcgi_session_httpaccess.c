@@ -100,9 +100,7 @@ static int httpaccess_check_credentials_n_first_login(UNUSED const char* const f
         amxc_var_add_key(uint32_t, args, "LoginAttempts", GET_UINT32(result_ht, "LoginAttempts"));
     }
 
-    ctx = amxb_be_who_has(USERINTERFACE_OBJECT_PATH);
-    when_null_status(ctx, exit, status = 503);
-
+    // First login
     when_failed(amxb_get(ctx, USERINTERFACE_FIRST_LOGIN_DM_PATH, 1, &result, 1), exit);
     result_ht = amxc_var_get_first(&result);
     when_null_status(result_ht, exit, status = 503);
