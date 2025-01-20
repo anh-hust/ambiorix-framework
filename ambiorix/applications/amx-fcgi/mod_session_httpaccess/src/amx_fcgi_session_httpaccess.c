@@ -67,11 +67,36 @@
 #define MOD_SESSION "fcgi-session"
 
 #define USERINTERFACE_OBJECT_PATH "UserInterface."
+#define USERINTERFACE_FIRST_LOGIN_DM_PATH "UserInterface.X_GTK_FirstLogin"
+#define FIRST_LOGIN_DM_PATH "X_GTK_FirstLogin"
+
 #define CHECK_CREDENTIALS_FOR_ACCESS_RPC "CheckCredentialsForAccess"
 #define CREATE_WEB_SESSION_RPC "CreateWebSession"
 #define CHECK_VALID_SESSION_RPC "CheckSessionValid"
 
-static int httpaccess_check_credentials(UNUSED const char* const function_name,
+static void log_custom(const char* log_content, ...) {
+    // Open the log file in append mode
+    FILE *file = fopen("/tmp/alfie.log", "a");
+    if (file == NULL) {
+        perror("Error opening log file");
+        return;
+    }
+
+    // Initialize the variable argument list
+    va_list args;
+    va_start(args, log_content);
+
+    // Write the formatted string to the log file
+    vfprintf(file, log_content, args);
+
+    // End the variable argument list
+    va_end(args);
+
+    // Close the file
+    fclose(file);
+}
+
+static int httpaccess_check_credentials_n_first_login(UNUSED const char* const function_name,
                                         amxc_var_t* args,
                                         amxc_var_t* ret) {
     int status = 400;
@@ -97,14 +122,56 @@ static int httpaccess_check_credentials(UNUSED const char* const function_name,
         amxc_var_add_key(uint32_t, args, "LoginAttempts", GET_UINT32(result_ht, "LoginAttempts"));
     }
 
+    // Alfie
+    ctx = amxb_be_who_has(USERINTERFACE_OBJECT_PATH);
+    when_null_status(ctx, exit, status = 503);
+
+    when_failed(amxb_get(ctx, USERINTERFACE_FIRST_LOGIN_DM_PATH, 1, &result, 1), exit);
+    result_ht = amxc_var_get_first(&result);
+    when_null_status(result_ht, exit, status = 503);
+
+    char key_path[256];
+    sprintf(key_path, "\"%s\".%s", USERINTERFACE_OBJECT_PATH, FIRST_LOGIN_DM_PATH);
+    result_ht = amxc_var_get_path(result_ht, key_path, AMXC_VAR_FLAG_DEFAULT);
+    status = amxc_var_dyncast(bool, result_ht) ? 307 : 0;
+    log_custom("[%s, line: %ld] Get firstLogin from: %s, Status: %d\r\n", __FILE__, __LINE__, key_path, status);
+    // **
+
 exit:
     if(ctx != NULL) {
         amxb_set_access(ctx, old_access);
     }
+    // Alfie
+    log_custom("[%s, line: %ld] Return into ret: %d\r\n", __FILE__, __LINE__, status);
+    // **
     amxc_var_set(int32_t, ret, status);
     amxc_var_clean(&result);
     return 0;
 }
+
+// static int httpaccess_check_if_first_login(UNUSED const char* const function_name) {
+//     int status = -1;
+//     char* key_path;
+//     amxc_var_t result;
+//     amxc_var_t* temp;
+
+//     amxc_var_init(&result);
+//     amxb_bus_ctx_t* ctx = amxb_be_who_has(USERINTERFACE_OBJECT_PATH);
+
+//     when_null(ctx, exit);
+
+//     when_failed(amxb_get(ctx, USERINTERFACE_FIRST_LOGIN_DM_PATH, 1, &result, 1), exit);
+//     temp = amxc_var_get_first(&result);
+//     when_null(temp, exit);
+
+//     sprintf(key_path, "\"%s\".%s", USERINTERFACE_OBJECT_PATH, FIRST_LOGIN_DM_PATH);
+//     temp = amxc_var_get_path(temp, key_path, AMXC_VAR_FLAG_DEFAULT);
+//     status = (int)amxc_var_dyncast(bool, temp);
+
+// exit:
+//     amxc_var_clean(&result);
+//     return status;
+// }
 
 static int httpaccess_create_session(UNUSED const char* const function_name,
                                      amxc_var_t* args,
@@ -254,7 +321,10 @@ static AMXM_CONSTRUCTOR session_httpaccess_start(void) {
     amxm_shared_object_t* so = amxm_so_get_current();
 
     amxm_module_register(&mod, so, MOD_SESSION);
-    amxm_module_add_function(mod, "check_credentials", httpaccess_check_credentials);
+    // Alfie
+    amxm_module_add_function(mod, "check_credentials_n_first_login", httpaccess_check_credentials_n_first_login);
+    // amxm_module_add_function(mod, "check_if_first_login", httpaccess_check_if_first_login);
+    // **
     amxm_module_add_function(mod, "create_session", httpaccess_create_session);
     amxm_module_add_function(mod, "delete_session", httpaccess_delete_session);
     amxm_module_add_function(mod, "is_valid_session", httpaccess_is_valid_session);
