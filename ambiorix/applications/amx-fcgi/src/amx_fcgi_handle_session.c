@@ -57,28 +57,6 @@
 
 #include "amx_fcgi.h"
 
-static void log_custom(const char* log_content, ...) {
-    // Open the log file in append mode
-    FILE *file = fopen("/tmp/alfie.log", "a");
-    if (file == NULL) {
-        perror("Error opening log file");
-        return;
-    }
-
-    // Initialize the variable argument list
-    va_list args;
-    va_start(args, log_content);
-
-    // Write the formatted string to the log file
-    vfprintf(file, log_content, args);
-
-    // End the variable argument list
-    va_end(args);
-
-    // Close the file
-    fclose(file);
-}
-
 static int amx_fcgi_check_credentials(const char* username, const char* password, const char* httpaccess, amxc_var_t* data) {
     int ret = 400;
     amxc_var_t args;
@@ -92,23 +70,16 @@ static int amx_fcgi_check_credentials(const char* username, const char* password
     when_null(amxc_var_add_key(cstring_t, &args, "username", username), exit);
     when_null(amxc_var_add_key(cstring_t, &args, "password", password), exit);
     when_null(amxc_var_add_key(cstring_t, &args, "httpaccess", httpaccess), exit);
-    // Alfie
-    ret = amxm_execute_function(session_ctrl, "fcgi-session", "check_credentials_n_first_login", &args, &result);
-    if (307 == ret){
-        when_null(amxc_var_add_key(bool, data, "firstlogin", (bool)ret), exit);
-    } else if (ret != 0){
-        goto exit;
-    }
-    // **
-
-    // ret = amxm_execute_function(session_ctrl, "fcgi-session", "check_if_first_login", NULL, NULL);
-    // if (ret != -1){
-    //     when_null(amxc_var_add_key(bool, data, "firstlogin", (bool)ret), exit);
-    // }
+    when_failed(amxm_execute_function(session_ctrl, "fcgi-session", "check_credentials_n_first_login", &args, &result), exit);
 
     ret = GET_INT32(&result, NULL);
+    if (ret == 307) {
+        amxc_var_add_key(uint32_t, data, "login_attempts", GET_UINT32(&args, "LoginAttempts"));
+        amxc_var_add_key(bool, data, "firstlogin", true);
+    }
     if(ret == 0) {
         amxc_var_add_key(uint32_t, data, "login_attempts", GET_UINT32(&args, "LoginAttempts"));
+        amxc_var_add_key(bool, data, "firstlogin", false);
     }
 
 exit:
@@ -134,28 +105,23 @@ exit:
 static int amx_fcgi_create_session_response(amxc_var_t* data, amxc_var_t* result) {
     int status = 500;
     amxc_var_t* login_attempts = amxc_var_take_key(data, "login_attempts");
-    // Alfie
     bool firstlogin = amxc_var_dyncast(bool, amxc_var_take_key(data, "firstlogin"));
-    log_custom("[%s, line: %ld] amx_fcgi_create_session_response, firstlogin: %d\r\n", __FILE__, __LINE__, firstlogin);
-    // **
 
     when_str_empty(GET_CHAR(result, "session_id"), exit);
     amxc_var_set_type(data, AMXC_VAR_ID_HTABLE);
     amxc_var_add_key(cstring_t, data, "sessionID", GET_CHAR(result, "session_id"));
     amxc_var_add_key(uint32_t, data, "absoluteTimeout", SESSION_ABSOLUTE_TIMER);
     amxc_var_add_key(uint32_t, data, "idleTimeout", SESSION_IDLE_TIMER);
+    amxc_var_add_key(bool, data, "firstlogin", firstlogin);
 
     if(amxc_var_type_of(login_attempts) == AMXC_VAR_ID_UINT32) {
         amxc_var_add_key(uint32_t, data, "loginAttempts", amxc_var_constcast(uint32_t, login_attempts));
     }
 
-    // Alfie
     if (firstlogin == true) {
         status = 307;
-        amxc_var_add_key(bool, data, "firstlogin", firstlogin);
         goto exit;
     }
-    //**
     status = 200;
 exit:
     amxc_var_delete(&login_attempts);
